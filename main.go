@@ -3,22 +3,30 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
 const (
 	host   = "localhost"
 	port   = 5432
-	dbname = "number_normalizer "
+	dbname = "number_normalizer"
 )
 
-var (
-	user     = os.Getenv("POSTGRES_USER")
+var user, password string
+
+func init() {
+	// loads values from .env into the system
+	if err := godotenv.Load(); err != nil {
+		log.Print("No .env file found")
+	}
+	user = os.Getenv("POSTGRES_USER")
 	password = os.Getenv("POSTGRES_PASS")
-)
+}
 
 func main() {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s sslmode=disable", host, port, user, password)
@@ -32,14 +40,23 @@ func main() {
 	must(err)
 	defer db.Close()
 
-	err = db.Ping()
-	must(err)
+	must(createPhoneTable(db))
 }
 
 func must(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func createPhoneTable(db *sql.DB) error {
+	statement := `
+	CREATE TABLE IF NOT EXISTS	phone_numbers (
+		id SERIAL,
+		value VARCHAR(255)
+	)`
+	_, err := db.Exec(statement)
+	return err
 }
 
 func resetDB(db *sql.DB, name string) error {

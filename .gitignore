@@ -62,6 +62,7 @@ Temporary Items
 ### VisualStudioCode Patch ###
 # Ignore all local history of files
 .history
+.env
 
 # End of https://www.gitignore.io/api/visualstudiocode,macos,go
 
