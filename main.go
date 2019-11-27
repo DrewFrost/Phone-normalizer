@@ -19,6 +19,11 @@ const (
 
 var user, password string
 
+type phoneNumber struct {
+	id     int
+	number string
+}
+
 func init() {
 	// loads values from .env into the system
 	if err := godotenv.Load(); err != nil {
@@ -30,20 +35,35 @@ func init() {
 
 func main() {
 	// initDB()
-	// numbers := []string{"1234567890", "123 456 7891", "(123) 456 7892", "(123) 456-7893", "123-456-7894", "123-456-7890", "1234567892", "(123)456-7892"}
+
 	db, err := connectToExistingDB()
 	must(err)
 	defer db.Close()
+	// numbers := []string{"1234567890", "123 456 7891", "(123) 456 7892", "(123) 456-7893", "123-456-7894", "123-456-7890", "1234567892", "(123)456-7892"}
 	// must(createPhoneTable(db))
-	// for i, v := range numbers {
-	// 	id, err := insertPhone(db, v)
+	// for _, v := range numbers {
+	// 	_, err := insertPhone(db, v)
 	// 	must(err)
-	// 	ids[i] = id
 	// }
+
 	phones, err := getAllPhones(db)
 	must(err)
 	for _, p := range phones {
-		fmt.Printf("%v\n", p)
+		fmt.Printf("Working on: %v\n", p)
+		phone := normalize(p.number)
+		if phone != p.number {
+			fmt.Println("Updating or removing: ", phone)
+			existing, err := findPhone(db, phone)
+			must(err)
+			if existing != nil {
+				must(deletePhone(db, p.id))
+			} else {
+				p.number = phone
+				must(updatePhone(db, p))
+			}
+		} else {
+			fmt.Println("No changes required")
+		}
 	}
 
 }
@@ -83,19 +103,19 @@ func resetDB(db *sql.DB, name string) error {
 }
 
 func createPhoneTable(db *sql.DB) error {
-	statement := `
+	qr := `
 	CREATE TABLE IF NOT EXISTS	phone_numbers (
 		id SERIAL,
 		value VARCHAR(255)
 	)`
-	_, err := db.Exec(statement)
+	_, err := db.Exec(qr)
 	return err
 }
 
 func insertPhone(db *sql.DB, phone string) (int, error) {
 	var id int
-	statement := `INSERT INTO phone_numbers(value) VALUES($1) RETURNING id`
-	err := db.QueryRow(statement, phone).Scan(&id)
+	qr := `INSERT INTO phone_numbers(value) VALUES($1) RETURNING id`
+	err := db.QueryRow(qr, phone).Scan(&id)
 	if err != nil {
 		return -1, err
 	}
@@ -111,19 +131,43 @@ func getPhone(db *sql.DB, id int) (string, error) {
 	return phone, nil
 }
 
-func getAllPhones(db *sql.DB) ([]string, error) {
-	rows, err := db.Query("SELECT value FROM phone_numbers")
+func updatePhone(db *sql.DB, p phoneNumber) error {
+	qr := `UPDATE phone_numbers SET value=$2 WHERE id=$1`
+	_, err := db.Exec(qr, p.id, p.number)
+	return err
+}
+
+func deletePhone(db *sql.DB, id int) error {
+	qr := `DELETE FROM phone_numbers WHERE id=$1`
+	_, err := db.Exec(qr, id)
+	return err
+}
+
+func findPhone(db *sql.DB, phone string) (*phoneNumber, error) {
+	var p phoneNumber
+	err := db.QueryRow("SELECT id, value FROM phone_numbers WHERE value=$1", phone).Scan(&p.id, &p.number)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &p, nil
+}
+
+func getAllPhones(db *sql.DB) ([]phoneNumber, error) {
+	rows, err := db.Query("SELECT id, value FROM phone_numbers")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var ret []string
+	var ret []phoneNumber
 	for rows.Next() {
-		var phone string
-		if err := rows.Scan(&phone); err != nil {
+		var p phoneNumber
+		if err := rows.Scan(&p.id, &p.number); err != nil {
 			return nil, err
 		}
-		ret = append(ret, phone)
+		ret = append(ret, p)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
